@@ -1,6 +1,6 @@
 ---
 title: "EDS 223: Homework 4"
-subtitle: "Houston Blackouts"
+subtitle: "Great Texas Storm: Houston Blackouts"
 author: "Veronica Moran"
 date: November 20, 2026
 format: typst
@@ -153,7 +153,10 @@ tm_shape(pre_post_storms) +
   tm_title("Nighttime Lights Before and After February 2021 Great Texas Freeze")
 ```
 
+The maps show a decrease in nighttime light intensity across parts of the Houston area before February 7 and after February 16, 2021. Areas with higher light intensity before the storm appear more reduced and after the storm, especially across the central and surrounding areas. This pattern is consistent with widespread power outages during the February 2021 Great Texas Freeze.
+
 ```{r}
+
 blackout_mask <- pre - post
 ```
 
@@ -172,11 +175,15 @@ blackout_sf <- st_as_sf(blackout_mask) |>
 
 
 ```{r}
+#| warning: false
 blackout_houston <- st_crop(
   blackout_sf,
   houston_bbox
 )
+```
 
+
+```{r}
 if(all(st_bbox(blackout_sf)==st_bbox(blackout_houston))){
   warning("extents unchanged")
 }else{
@@ -184,7 +191,6 @@ if(all(st_bbox(blackout_sf)==st_bbox(blackout_houston))){
 
   }
 ```
-
 
 ```{r}
 blackout_houston <-st_transform(blackout_houston, st_crs("EPSG:3083"))
@@ -209,17 +215,20 @@ test_that("roads crs matches blackout crs", {
 ```
 
 ```{r}
+# Creating 20 m buffer around highways
 road_buffer <- st_buffer(roads, dist = 200)
 ```
 
 
 ```{r}
+# Merging overlapping buffers into one polygon. 
 road_union <- st_union(road_buffer)
 ```
 
 
 ```{r}
 #| warning: false
+# Removing areas withing 200 m of highways 
 blackout_houston_nr <- st_difference(
   blackout_houston,
   road_union
@@ -238,6 +247,7 @@ if (sum(st_area(blackout_houston_nr)) >= sum(st_area(blackout_houston))) {
 
 ```{r}
 #| warning: false
+# Cropping to houston bounding box
 houses_houston <- st_crop(
   houses,
   houston_bbox
@@ -270,18 +280,20 @@ if (st_crs(houses) != st_crs(blackout_houston_nr)) {
 
 
 ```{r}
-# st_filter with st_intersects (the default predicate)
+# st_filter with st_intersects
 houses_filter <- st_filter(houses, blackout_houston_nr)
 ```
 
 
 ```{r}
+# keeping only geometries of affected homes
 houses_blackouts <-
   st_geometry(houses_filter)
 ```
 
-
 ```{r}
+# Creating table of homes blackout totals and percentages
+
 bo_summ <- houses_filter |>
   st_drop_geometry() |>
   summarise(
@@ -321,18 +333,94 @@ bo_summ <- houses_filter |>
 bo_summ
 ```
 
+### Houston Blackout Areas and Homes Affected
 
 ```{r}
-bo_houston <-
-  tm_basemap("OpenStreetMap", zoom = 9, alpha = 0.9) +
-  tm_shape(blackout_houston_nr) +
-  tm_polygons()
+#| fig-width: 9
+#| fig-height: 6
+#| fig-align: center
 
+# Blackout areas map
+bo_houston <-
+  tm_basemap(
+    "OpenStreetMap",
+    zoom = 9,
+    alpha = 0.9
+  ) +
+  tm_shape(blackout_houston_nr) +
+  tm_polygons(
+    fill = "orangered1",
+    col = "orangered1"
+  ) +
+  tm_scalebar(
+    position = c("left", "bottom"),
+    bg.color = "white",
+    bg.alpha = 0.7,
+    text.size = 0.7
+  ) +
+  tm_compass(
+    position = c("right", "top"),
+    bg.color = "white",
+    bg.alpha = 0.7
+  ) +
+  tm_add_legend(
+    type = "polygons",
+    title = "",
+    fill = "orangered1",
+    labels = "Blackout areas"
+  ) +
+  tm_title(
+    text = "Blackout Areas"
+  )
+
+# Homes in blackout areas map
 hb_houston <-
-  tm_basemap("OpenStreetMap", zoom = 9, alpha = 0.9) +
+  tm_basemap(
+    "OpenStreetMap",
+    zoom = 9,
+    alpha = 0.9
+  ) +
   tm_shape(houses_blackouts) +
-  tm_polygons()
-tmap_arrange(bo_houston, hb_houston, nrow = 1)
+  tm_polygons(
+    fill = "red3",
+    col = "red3"
+  ) +
+  tm_scalebar(
+    position = c("left", "bottom"),
+    bg.color = "white",
+    bg.alpha = 0.7,
+    text.size = 0.7
+  ) +
+  tm_compass(
+    position = c("right", "top"),
+    bg.color = "white",
+    bg.alpha = 0.7
+  ) +
+  tm_add_legend(
+    type = "polygons",
+    title = "",
+    fill = "red3",
+    labels = "Homes in blackout areas"
+  ) +
+  tm_title(
+    text = "Homes in Blackout Areas"
+  )
+
+# Plot maps side by side
+tmap_arrange(
+  bo_houston,
+  hb_houston,
+  nrow = 1,
+  asp = NA
+)
 ```
 
+These maps compare the areas that lost power during the February 2021 Texas storms with the homes located within those blackout areas. An estimated 157,967 homes lost power, compared with 317,974 homes that did not, meaning about 33% of homes in the Houston study area were affected. These results show how satellite nighttime light data can be used to estimate the spatial extent of power outages. One limitation is that changes in nighttime light intensity could be caused by factors other than storm-related power loss, which may affect which areas were identified as blackouts.
 
+
+
+# References
+
+[1] NASA Level-1 and Atmosphere Archive & Distribution System Distributed Active Archive Center (LAADS DAAC). VIIRS VNP46A1 nighttime light data.
+
+[2]OpenStreetMap contributors. Road and building data distributed through Geofabrik.
