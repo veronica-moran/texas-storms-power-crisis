@@ -56,5 +56,3 @@ Master of Environmental Data Science (MEDS), UC Santa Barbara
 [1] NASA Level-1 and Atmosphere Archive & Distribution System Distributed Active Archive Center (LAADS DAAC). VIIRS VNP46A1 nighttime light data.
 
 [2]OpenStreetMap contributors. Road and building data distributed through Geofabrik.
-
-[3] UCSB Bren School of Environmental Science & Management. EDS 223: Geospatial Analysis & Remote Sensing.
