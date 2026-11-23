@@ -17,6 +17,8 @@ library(tidyverse)
 library(tmap) 
 library(here) # file path management
 library(stars)
+library(gt)
+library(testthat)
 ```
 
 ## Background
@@ -68,14 +70,88 @@ houses <- read_sf(
 ```
 
 ```{r}
-plot(pre)
+if (!identical(dim(pre), dim(post)) | st_crs(pre) != st_crs(post)) {
+  stop("Pre and post rasters do not align")
+} else {
+  print("rasters align")
+}
+```
+
+```{r}
+# Creating bounding box to Houston coordinates
+houston_bbox <- st_bbox(
+  c(
+    xmin = -96.5,
+    ymin = 29,
+    xmax = -94.5,
+    ymax = 30.5
+  ),
+  crs = st_crs(pre)
+)
+```
+
+```{r}
+# Cropping to Houston bounding box
+pre_houston  <- st_crop(pre, houston_bbox)
+post_houston <- st_crop(post, houston_bbox)
+
+# Combining rasters and labeling each by date
+pre_post_storms <- c(pre_houston, post_houston)
+names(pre_post_storms) <- c("Before: Feb 7, 2021", "After: Feb 16, 2021")
+```
+
+```{r}
+pre_values <- as.vector(pre_houston[[1]])
+boxplot(pre_values, main = "Pre-storm night light values", 
+     ylab = "Intensity (nW cm-2 sr-1)")
 ```
 
 
 ```{r}
-plot(post)
+post_values <- as.vector(post_houston[[1]])
+boxplot(post_values,main = "Post-storm night light values", 
+     ylab = "Intensity (nW cm-2 sr-1)")
 ```
 
+
+```{r}
+#| fig-width: 7
+#| fig-height: 4.5
+# Breaks for skewed nighttime light values
+light_breaks <- c(0, 10, 50, 200, 1000, Inf)
+
+# Plot side by side with one shared legend
+tm_shape(pre_post_storms) +
+  tm_raster(
+    col = c(
+      "Before: Feb 7, 2021",
+      "After: Feb 16, 2021"
+    ),
+    col.scale = tm_scale_intervals(
+      breaks = light_breaks,
+      values = "viridis"
+    ),
+    col.legend = tm_legend(
+      "Night light intensity (nW cm-2 sr-1)",
+      orientation = "landscape",
+      position = tm_pos_out("center", "bottom")
+    ),
+    col.free = FALSE
+  ) +
+  tm_facets_wrap(ncol = 2) +
+  tm_scalebar(
+    position = c("left", "bottom"),
+    bg.color = "white",
+    bg.alpha = 0.7,
+    text.size = 0.7
+  ) +
+  tm_compass(
+    position = c("right", "top"),
+    bg.color = "white",
+    bg.alpha = 0.7
+  )+
+  tm_title("Nighttime Lights Before and After February 2021 Great Texas Freeze")
+```
 
 ```{r}
 blackout_mask <- pre - post
@@ -83,41 +159,39 @@ blackout_mask <- pre - post
 
 
 ```{r}
-# Set all cells with values greater than 200 to NA
+# Set all cells with values less than 200 to NA
 blackout_mask[blackout_mask<200] <- NA
-
 ```
 
 ```{r}
 # Vectorizing 
-
 blackout_sf <- st_as_sf(blackout_mask) |>
   st_make_valid()
 ```
 
+
+
 ```{r}
-# Cropping blackout mask to Houston area
 blackout_houston <- st_crop(
   blackout_sf,
-  xmin = -96.5,
-  ymin = 29,
-  xmax = -94.5,
-  ymax = 30.5
+  houston_bbox
 )
+
+if(all(st_bbox(blackout_sf)==st_bbox(blackout_houston))){
+  warning("extents unchanged")
+}else{
+  print("extent reduced")
+
+  }
 ```
 
 
 ```{r}
 blackout_houston <-st_transform(blackout_houston, st_crs("EPSG:3083"))
-```
 
-
-```{r}
-st_crs(blackout_houston)
-```
-
-```{r}
-st_crs(roads)
+test_that("blackout_houston is in EPSG:3083", {
+  expect_equal(st_crs(blackout_houston)$epsg, 3083)
+})
 ```
 
 ```{r}
@@ -126,6 +200,12 @@ roads <- st_transform(
   roads,
   st_crs(blackout_houston)
 )
+
+# Test CRS match
+test_that("roads crs matches blackout crs", {
+  expect_equal(st_crs(roads), st_crs(blackout_houston))
+})
+
 ```
 
 ```{r}
@@ -139,65 +219,120 @@ road_union <- st_union(road_buffer)
 
 
 ```{r}
+#| warning: false
 blackout_houston_nr <- st_difference(
   blackout_houston,
   road_union
 )
 ```
 
-```{r}
-st_crs(blackout_houston)
-```
-
 
 ```{r}
-st_crs(roads)
-```
-
-
-```{r}
-plot(blackout_houston_nr)
-```
-
-
-```{r}
-st_crs(houses)
+# Verifying removing highway reduced blackout area
+if (sum(st_area(blackout_houston_nr)) >= sum(st_area(blackout_houston))) {
+  warning("area was not reduced")
+} else {
+  print("highway removal reduced area")
+}
 ```
 
 ```{r}
-# Transform roads to match blackout CRS
+#| warning: false
+houses_houston <- st_crop(
+  houses,
+  houston_bbox
+)
+```
+
+```{r}
+# verify that cropping changed the extent
+if (all(st_bbox(houses) == st_bbox(houses_houston))) {
+  warning("extents unchanged")
+} else {
+  print("extent reduced")
+}
+```
+
+```{r}
+# Transform houses to match blackout CRS
 houses <- st_transform(
   houses,
   st_crs(blackout_houston)
 )
+
+# Verifying CRS match
+if (st_crs(houses) != st_crs(blackout_houston_nr)) {
+  stop("CRS does not match")
+} else {
+  print("it's a match!")
+}
 ```
 
 
 ```{r}
 # st_filter with st_intersects (the default predicate)
-houses_blackouts <- st_filter(houses, blackout_houston_nr)|> 
-  st_geometry()
+houses_filter <- st_filter(houses, blackout_houston_nr)
 ```
 
 
 ```{r}
-plot(houses_blackouts)
+houses_blackouts <-
+  st_geometry(houses_filter)
 ```
+
+
+```{r}
+bo_summ <- houses_filter |>
+  st_drop_geometry() |>
+  summarise(
+    n_blackout = n()
+  ) |>
+  mutate(
+    n_houston = nrow(houses_houston),
+    n_no_blackout = n_houston - n_blackout,
+    pcnt_house = (n_blackout / n_houston) * 100
+  ) |>
+  select(
+    n_blackout,
+    n_no_blackout,
+    n_houston,
+    pcnt_house
+  ) |>
+  gt() |>
+  tab_header(
+    title = md("Houston Homes Affected by Blackout")
+  ) |>
+  cols_label(
+    n_houston = "Total Homes",
+    n_blackout = "Homes in Blackout Areas",
+    n_no_blackout = "Homes Not in Blackout Areas",
+    pcnt_house = "Percent Affected"
+  ) |>
+  fmt_number(
+    columns = c(n_houston, n_blackout, n_no_blackout),
+    decimals = 0
+  ) |>
+  fmt_number(
+    columns = pcnt_house,
+    decimals = 2,
+    pattern = "{x}%"
+  )
+
+bo_summ
+```
+
 
 ```{r}
 bo_houston <-
   tm_basemap("OpenStreetMap", zoom = 9, alpha = 0.9) +
   tm_shape(blackout_houston_nr) +
   tm_polygons()
-bo_houston
-```
 
-```{r}
 hb_houston <-
   tm_basemap("OpenStreetMap", zoom = 9, alpha = 0.9) +
   tm_shape(houses_blackouts) +
   tm_polygons()
-hb_houston
+tmap_arrange(bo_houston, hb_houston, nrow = 1)
 ```
 
 
